@@ -269,8 +269,15 @@ def get_file_paths_and_total_size(
                         )
                 dirs[:] = [d for d in dirs if not d in EXCLUDE_FOLDERS]
             for name in filenames:
-                files.append(os.path.join(root, name))
-                size += os.path.getsize(os.path.join(root, name))
+                try:
+                    size += os.path.getsize(os.path.join(root, name))
+                    files.append(os.path.join(root, name))
+                except (FileNotFoundError, PermissionError):
+                    log.warning(
+                        "File '%s' cannot be accessed and will not be processed - try running as"
+                        " admin",
+                        os.path.join(root, name),
+                    )
     return sorted(files), size
 
 
@@ -485,25 +492,41 @@ def hash_files(
             file_extension = os.path.splitext(file_path)[1].lower()
             # Hash the file itself unless we're only_archiving_contents and it's a .zip/.7z
             if not only_archive_contents or file_extension not in ARCHIVE_EXTENSIONS:
-                local_file_metadata = pathlib.Path(file_path).stat()
-                file_size = local_file_metadata.st_size
-                # Get info from the pre-computed hash data if it is available
-                if file_path in pre_computed_hash_values:
-                    file_metadata = get_metadata_from_precomputed(
-                        file_path, pre_computed_hash_values, file_size, source_folder, log
-                    )
-                else:
-                    file_metadata = get_metadata_from_file(
+                try:
+                    local_file_metadata = pathlib.Path(file_path).stat()
+                    file_size = local_file_metadata.st_size
+                    # Get info from the pre-computed hash data if it is available
+                    if file_path in pre_computed_hash_values:
+                        file_metadata = get_metadata_from_precomputed(
+                            file_path, pre_computed_hash_values, file_size, source_folder, log
+                        )
+                    else:
+                        file_metadata = get_metadata_from_file(
+                            file_path,
+                            None,
+                            None,
+                            local_file_metadata.st_size,
+                            local_file_metadata.st_ctime,
+                            local_file_metadata.st_mtime,
+                            source_folder,
+                            hash_algorithms,
+                            preferred_hash_length,
+                        )
+                except FileNotFoundError:
+                    log.warning(
+                        "File '%s' has been deleted in the time between scanning source path '%s'"
+                        " and reaching this file in the hash queue. This file has not been hashed",
                         file_path,
-                        None,
-                        None,
-                        local_file_metadata.st_size,
-                        local_file_metadata.st_ctime,
-                        local_file_metadata.st_mtime,
                         source_folder,
-                        hash_algorithms,
-                        preferred_hash_length,
                     )
+                    continue
+                except (PermissionError, OSError):
+                    log.warning(
+                        "PermissionError/OSError occurred for file '%s' - this file has not"
+                        " been hashed. Try running script as admin",
+                        file_path,
+                    )
+                    continue
                 if file_metadata.preferred_hash not in hashes:
                     hashes[file_metadata.preferred_hash] = []
                 write_metadata_line(file_metadata, OUTPUT_TEMPLATE, file_handler)
@@ -519,6 +542,23 @@ def hash_files(
                         log.warning(
                             "'%s' is reported as 'not a ZIP file' by Python zipfile module - will"
                             " attempt 7z extraction",
+                            file_path,
+                        )
+                        try_7z_extraction = True
+                    except FileNotFoundError:
+                        log.warning(
+                            "File '%s' has been deleted in the time between scanning source path"
+                            " '%s' and reaching this file in the hash queue. This file has not been"
+                            " hashed",
+                            file_path,
+                            source_folder,
+                        )
+                        continue
+                    except (PermissionError, OSError):
+                        log.warning(
+                            "PermissionError/OSError occurred for accessing zip contents of file"
+                            " '%s' - will try with 7zip, but script likely needs to be run as"
+                            " admin",
                             file_path,
                         )
                         try_7z_extraction = True
