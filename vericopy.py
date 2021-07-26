@@ -238,12 +238,22 @@ def get_file_paths_and_total_size(
         log is None
     ):  # i.e. we are NOT calling from a separate process, so can get the logger ourself
         log = logging.getLogger(__name__)
+
+    def walk_error(os_error: OSError) -> None:
+        """Log any errors occurring during os.walk"""
+        if log is not None:
+            log.warning(
+                "'%s' could not be accessed during folder scanning - any contents will not be"
+                " processed. Try running script as admin",
+                os_error.filename,
+            )
+
     EXCLUDE_FOLDERS = {"$RECYCLE.BIN", "System Volume Information"}
     exclude_folder_seen_log = {}  # type: typing.Dict[str, typing.List[str]]
     files = []
     size = 0
     for path in sorted(paths):
-        for root, dirs, filenames in os.walk(path):
+        for root, dirs, filenames in os.walk(path, onerror=walk_error):
             if ignore_dotfiles:
                 filenames = [f for f in filenames if not f[0] == "."]
                 dirs[:] = [d for d in dirs if not d[0] == "."]
