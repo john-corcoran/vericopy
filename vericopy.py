@@ -299,6 +299,7 @@ def get_dict_from_hash_files(
     results = {}  # type: typing.Dict[str, typing.Dict[str, typing.Any]]
     for hash_file_path in hash_file_paths:
         with open(hash_file_path, "r", encoding="utf-8", errors="ignore") as file_handler:
+            line_count = 0
             for line in file_handler:
                 line_data = line.strip().split("|")
                 try:
@@ -341,6 +342,10 @@ def get_dict_from_hash_files(
                             path,
                         )
                         return {}
+                line_count += 1
+        if line_count == 0:
+            log.error("'%s' is empty", hash_file_path)
+            return {}
     return results
 
 
@@ -1964,6 +1969,12 @@ def compare_mode(
         )
         return
 
+    log.info(
+        "Comparison will be performed to check all hashes in '%s' are present in '%s'",
+        source_file_path,
+        dest_file_path,
+    )
+
     # Bring in metadata from hash files
     source_hash_values = get_dict_from_hash_files([source_file_path])
     dest_hash_values = get_dict_from_hash_files([dest_file_path])
@@ -2419,9 +2430,9 @@ def main() -> None:
     if counter_handler.count["WARNING"] > 0 or counter_handler.count["ERROR"] > 0:
         log.warning(
             "Script complete; %s warnings/errors occurred requiring review (see log entries"
-            " above, replicated in folder '%s'",
+            " above%s)",
             counter_handler.count["WARNING"] + counter_handler.count["ERROR"],
-            args.logfolder,
+            ", replicated in folder '{}'".format(args.logfolder) if args.log or args.debug else "",
         )
     else:
         log.info("Script complete; no errors reported")
