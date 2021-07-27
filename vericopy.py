@@ -493,12 +493,23 @@ def hash_files(
     hashes = {}  # type: typing.Dict[str, typing.List[FileMetadata]]
     hash_log_folder_path = os.path.join(log_folder_path, source_or_destination_str)
     pathlib.Path(hash_log_folder_path).mkdir(parents=True, exist_ok=True)
+    safe_hash_log_file_name = get_safe_path_name(source_folder)
+    if len(safe_hash_log_file_name) == 0:
+        safe_hash_log_file_name = "root"
     hash_log_file_path = os.path.join(
-        hash_log_folder_path, "{}.txt".format(get_safe_path_name(source_folder))
+        hash_log_folder_path, "{}.txt".format(safe_hash_log_file_name)
     )
 
     with open(hash_log_file_path, "w", encoding="utf-8", errors="ignore") as file_handler:
         for file_path in tqdm.tqdm(file_paths, position=process_number):
+            log.debug("Processing '%s'", file_path)
+            if not os.path.isfile(file_path):
+                log.warning(
+                    "File '%s' has either been deleted or is not a regular file (may be a Unix pipe"
+                    " or socket) - will be skipped",
+                    file_path,
+                )
+                continue
             file_extension = os.path.splitext(file_path)[1].lower()
             # Hash the file itself unless we're only_archiving_contents and it's a .zip/.7z
             if not only_archive_contents or file_extension not in ARCHIVE_EXTENSIONS:
@@ -525,7 +536,8 @@ def hash_files(
                 except FileNotFoundError:
                     log.warning(
                         "File '%s' has been deleted in the time between scanning source path '%s'"
-                        " and reaching this file in the hash queue. This file has not been hashed",
+                        " and reaching this file in the hash queue. This file has not been"
+                        " processed",
                         file_path,
                         source_folder,
                     )
@@ -533,7 +545,7 @@ def hash_files(
                 except (PermissionError, OSError):
                     log.warning(
                         "PermissionError/OSError occurred for file '%s' - this file has not"
-                        " been hashed. Try running script as admin",
+                        " been processed. Try running script as admin",
                         file_path,
                     )
                     continue
@@ -559,7 +571,7 @@ def hash_files(
                         log.warning(
                             "File '%s' has been deleted in the time between scanning source path"
                             " '%s' and reaching this file in the hash queue. This file has not been"
-                            " hashed",
+                            " processed",
                             file_path,
                             source_folder,
                         )
